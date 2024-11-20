@@ -7,7 +7,7 @@ const decodeTexture = require('./lib/decode-texture');
 /**************************** config ****************************/
 const PLANET = 'earth';
 const URL_PREFIX = `https://kh.google.com/rt/${PLANET}/`;
-const DL_DIR = './downloaded_files';
+const DL_DIR = './downloaded_files'; //You can change this to use another drive if your C drive is running low. For example: 'E:/downloaded_files'
 const [DUMP_OBJ_DIR, DUMP_JSON_DIR, DUMP_RAW_DIR] = ['obj', 'json', 'raw'].map(x => path.join(DL_DIR, x));
 const { OCTANTS, MAX_LEVEL, DUMP_JSON, DUMP_RAW, PARALLEL_SEARCH } = require('./lib/parse-command-line')(__filename);
 const DUMP_OBJ = !(DUMP_JSON || DUMP_RAW);
@@ -16,7 +16,28 @@ const DUMP_OBJ = !(DUMP_JSON || DUMP_RAW);
 const { getPlanetoid, getBulk, getNode, bulk: { getIndexByPath, hasBulkMetadataAtIndex, hasNodeAtIndex } } = require('./lib/utils')({
 	URL_PREFIX, DUMP_JSON_DIR, DUMP_RAW_DIR, DUMP_JSON, DUMP_RAW
 });
-
+/******************************SafeFileWriteSync function*******************************/
+//Custom function that fixes the EBUSY error on slow computers that creates weird texture bugs.
+function safeWriteFileSync(filePath, data) {
+    const maxRetries = 5;
+    let attempts = 0;
+    while (attempts < maxRetries) {
+        try {
+            fs.writeFileSync(filePath, data);
+            return; // Success
+        } catch (error) {
+            if (error.code === 'EBUSY') {
+                attempts++;
+                console.warn(`File is busy, retrying... (${attempts}/${maxRetries})`);
+                // Add a small delay before retrying
+                require('child_process').execSync('sleep 0.1'); 
+            } else {
+                throw error; // Throw other errors immediately
+            }
+        }
+    }
+    throw new Error(`Failed to write to ${filePath} after ${maxRetries} attempts`);
+}
 /***************************** main *****************************/
 async function run() {
 
@@ -136,7 +157,7 @@ async function checkNodeAtNodePath(rootEpoch, nodePath) {
 
 /**************************** export ****************************/
 function initCtxOBJ(dir) {
-	fs.writeFileSync(path.join(dir, 'model.obj'), `mtllib model.mtl\n`);
+	safeWriteFileSync(path.join(dir, 'model.obj'), `mtllib model.mtl\n`);
 	return { objDir: dir, c_v: 0, c_n: 0, c_u: 0 };
 }
 
@@ -158,7 +179,7 @@ function writeNodeOBJ(ctx, node, nodeName, exclude) {
 			map_Kd ${texName}.${ext}
 		`.split('\n').map(s => s.trim()).join('\n'));
 
-		fs.writeFileSync(path.join(ctx.objDir, `${texName}.${ext}`), buf);
+		safeWriteFileSync(path.join(ctx.objDir, `${texName}.${ext}`), buf);
 	}
 }
 
@@ -352,4 +373,3 @@ function semaphore(num) {
 	console.error(e);
 	process.exit(1);
 });
-
